@@ -113,12 +113,11 @@ public struct ChartTrackerLineLayerModel<T: ChartPoint, U> {
 open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
     
     fileprivate let lineColor: UIColor
+    fileprivate let lineWidth: CGFloat
     fileprivate let animDuration: Float
     fileprivate let animDelay: Float
     
     fileprivate let settings: ChartPointsLineTrackerLayerSettings
-
-    fileprivate var isTracking: Bool = false
     
     open var positionUpdateHandler: (([ChartTrackerSelectedChartPoint<T, U>]) -> Void)?
     
@@ -129,17 +128,21 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
     
     fileprivate var lineView: UIView?
     
-    public convenience init(xAxis: ChartAxis, yAxis: ChartAxis, lines: [[T]], lineColor: UIColor, animDuration: Float, animDelay: Float, settings: ChartPointsLineTrackerLayerSettings, positionUpdateHandler: (([ChartTrackerSelectedChartPoint<T, U>]) -> Void)? = nil) {
-        self.init(xAxis: xAxis, yAxis: yAxis, lines: lines.map{ChartTrackerLineModel(chartPoints: $0)}, lineColor: lineColor, animDuration: animDuration, animDelay: animDelay, settings: settings, positionUpdateHandler: positionUpdateHandler)
+    fileprivate var initialChartPoint: ChartPoint?
+    
+    public convenience init(xAxis: ChartAxis, yAxis: ChartAxis, lines: [[T]], lineColor: UIColor, lineWidth: CGFloat = 1, initialChartPoint: ChartPoint? = nil, animDuration: Float, animDelay: Float, settings: ChartPointsLineTrackerLayerSettings, positionUpdateHandler: (([ChartTrackerSelectedChartPoint<T, U>]) -> Void)? = nil) {
+        self.init(xAxis: xAxis, yAxis: yAxis, lines: lines.map{ChartTrackerLineModel(chartPoints: $0)}, lineColor: lineColor, lineWidth: lineWidth, animDuration: animDuration, animDelay: animDelay, settings: settings, positionUpdateHandler: positionUpdateHandler)
     }
     
-    public init(xAxis: ChartAxis, yAxis: ChartAxis, lines: [ChartTrackerLineModel<T, U>], lineColor: UIColor, animDuration: Float, animDelay: Float, settings: ChartPointsLineTrackerLayerSettings, positionUpdateHandler: (([ChartTrackerSelectedChartPoint<T, U>]) -> Void)? = nil) {
+    public init(xAxis: ChartAxis, yAxis: ChartAxis, lines: [ChartTrackerLineModel<T, U>], lineColor: UIColor, lineWidth: CGFloat, initialChartPoint: ChartPoint? = nil, animDuration: Float, animDelay: Float, settings: ChartPointsLineTrackerLayerSettings, positionUpdateHandler: (([ChartTrackerSelectedChartPoint<T, U>]) -> Void)? = nil) {
         self.lineColor = lineColor
+        self.lineWidth = lineWidth
         self.animDuration = animDuration
         self.animDelay = animDelay
         self.settings = settings
         self.positionUpdateHandler = positionUpdateHandler
         self.lines = lines
+        self.initialChartPoint = initialChartPoint
         super.init(xAxis: xAxis, yAxis: yAxis, chartPoints: Array(lines.map{$0.chartPoints}.joined()))
     }
 
@@ -150,6 +153,10 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
     override func initChartPointModels() {
         lineModels = lines.map{ChartTrackerLineLayerModel<T, U>(chartPointModels: generateChartPointModels($0.chartPoints), extra: $0.extra)}
         chartPointsModels = Array(lineModels.map{$0.chartPointModels}.joined()) // consistency
+        if let initialPoint = initialChartPoint,
+            let pointModel = (chartPointsModels as? [ChartPointLayerModel<ChartPoint>])?.filter({$0.chartPoint == initialPoint }).first {
+                updateLineView(screenLoc: pointModel.screenLoc)
+        }
     }
     
     override func updateChartPointsScreenLocations() {
@@ -277,7 +284,6 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
             if !intersections.isEmpty {
                 
                 self.currentIntersections = self.settings.selectNearest ? touchPoint.nearest(intersections, pointMapper: {$0.screenLoc}).map{[$0.pointMappable]} ?? [] : intersections
-                self.isTracking = true
                 
                 self.updateLineView()
                 
@@ -306,25 +312,26 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
                     self.positionUpdateHandler?(chartPoints)
                 }
                 
-            } else {
-                self.clearIntersections()
             }
         }
     }
     
-    fileprivate func updateLineView() {
-        
-        guard let firstIntersection = currentIntersections.first, let containerTouchCoordinates = globalToDrawersContainerCoordinates(firstIntersection.screenLoc) else {return}
-        
+    fileprivate func updateLineView(screenLoc: CGPoint) {
+        guard let containerTouchCoordinates = globalToDrawersContainerCoordinates(screenLoc) else {return}
         if lineView == nil {
             let lineView = UIView()
-            lineView.frame.size = CGSize(width: 2, height: 10000000)
-            lineView.backgroundColor = UIColor.black
+            lineView.frame.size = CGSize(width: lineWidth, height: 10000000)
+            lineView.backgroundColor = lineColor
             chart?.addSubviewNoTransform(lineView)
             self.lineView = lineView
         }
         
         lineView?.center.x = containerTouchCoordinates.x
+    }
+    
+    fileprivate func updateLineView() {
+        guard let firstIntersection = currentIntersections.first else {return}
+        updateLineView(screenLoc: firstIntersection.screenLoc)
     }
 
     fileprivate func toLine(_ intersection: CGPoint) -> (p1: CGPoint, p2: CGPoint) {
@@ -332,17 +339,7 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
     }
 
     open override func handlePanStart(_ location: CGPoint) {
-        guard let localLocation = toLocalCoordinates(location) else {return}
-        
         updateChartPointsScreenLocations()
-        
-        let surroundingRect = localLocation.surroundingRect(30)
-        
-        if intersectsWithChartPointLines(surroundingRect) || intersectsWithTrackerLine(surroundingRect) {
-            isTracking = true
-        } else {
-            clearIntersections()
-        }
     }
     
     fileprivate func clearIntersections() {
@@ -351,16 +348,11 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
         lineView?.removeFromSuperview()
         lineView = nil
     }
-    
+
     open override func processPan(location: CGPoint, deltaX: CGFloat, deltaY: CGFloat, isGesture: Bool, isDeceleration: Bool) -> Bool {
         guard let localLocation = toLocalCoordinates(location) else {return false}
-        
-        if isTracking {
-            updateTrackerLine(touchPoint: localLocation)
-            return true
-        } else {
-            return false
-        }
+        updateTrackerLine(touchPoint: localLocation)
+        return true
     }
     
     open override func handleGlobalTap(_ location: CGPoint) -> Any? {
@@ -371,10 +363,6 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
         updateTrackerLine(touchPoint: localLocation)
 
         return nil
-    }
-    
-    open override func handlePanEnd() {
-        isTracking = false
     }
     
     open override func modelLocToScreenLoc(x: Double) -> CGFloat {
