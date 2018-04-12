@@ -131,7 +131,7 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
     fileprivate var initialChartPoint: ChartPoint?
     
     public convenience init(xAxis: ChartAxis, yAxis: ChartAxis, lines: [[T]], lineColor: UIColor, lineWidth: CGFloat = 1, initialChartPoint: ChartPoint? = nil, animDuration: Float, animDelay: Float, settings: ChartPointsLineTrackerLayerSettings, positionUpdateHandler: (([ChartTrackerSelectedChartPoint<T, U>]) -> Void)? = nil) {
-        self.init(xAxis: xAxis, yAxis: yAxis, lines: lines.map{ChartTrackerLineModel(chartPoints: $0)}, lineColor: lineColor, lineWidth: lineWidth, animDuration: animDuration, animDelay: animDelay, settings: settings, positionUpdateHandler: positionUpdateHandler)
+        self.init(xAxis: xAxis, yAxis: yAxis, lines: lines.map{ChartTrackerLineModel(chartPoints: $0)}, lineColor: lineColor, lineWidth: lineWidth, initialChartPoint: initialChartPoint, animDuration: animDuration, animDelay: animDelay, settings: settings, positionUpdateHandler: positionUpdateHandler)
     }
     
     public init(xAxis: ChartAxis, yAxis: ChartAxis, lines: [ChartTrackerLineModel<T, U>], lineColor: UIColor, lineWidth: CGFloat, initialChartPoint: ChartPoint? = nil, animDuration: Float, animDelay: Float, settings: ChartPointsLineTrackerLayerSettings, positionUpdateHandler: (([ChartTrackerSelectedChartPoint<T, U>]) -> Void)? = nil) {
@@ -317,7 +317,6 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
     }
     
     fileprivate func updateLineView(screenLoc: CGPoint) {
-        guard let containerTouchCoordinates = globalToDrawersContainerCoordinates(screenLoc) else {return}
         if lineView == nil {
             let lineView = UIView()
             lineView.frame.size = CGSize(width: lineWidth, height: 10000000)
@@ -326,12 +325,13 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
             self.lineView = lineView
         }
         
-        lineView?.center.x = containerTouchCoordinates.x
+        lineView?.center.x = screenLoc.x
     }
     
     fileprivate func updateLineView() {
-        guard let firstIntersection = currentIntersections.first else {return}
-        updateLineView(screenLoc: firstIntersection.screenLoc)
+        guard let firstIntersection = currentIntersections.first,
+            let containerTouchCoordinates = globalToDrawersContainerCoordinates(firstIntersection.screenLoc) else {return}
+        updateLineView(screenLoc: containerTouchCoordinates)
     }
 
     fileprivate func toLine(_ intersection: CGPoint) -> (p1: CGPoint, p2: CGPoint) {
