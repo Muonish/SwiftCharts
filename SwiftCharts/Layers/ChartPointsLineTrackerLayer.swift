@@ -153,10 +153,14 @@ open class ChartPointsLineTrackerLayer<T: ChartPoint, U>: ChartPointsLayer<T> {
     override func initChartPointModels() {
         lineModels = lines.map{ChartTrackerLineLayerModel<T, U>(chartPointModels: generateChartPointModels($0.chartPoints), extra: $0.extra)}
         chartPointsModels = Array(lineModels.map{$0.chartPointModels}.joined()) // consistency
-        if let initialPoint = initialChartPoint,
-            let pointModel = (chartPointsModels as? [ChartPointLayerModel<ChartPoint>])?.filter({$0.chartPoint == initialPoint }).first {
-                updateLineView(screenLoc: pointModel.screenLoc)
+        guard let initialPoint = initialChartPoint,
+            let pointModel = (chartPointsModels as? [ChartPointLayerModel<ChartPoint>])?.filter({$0.chartPoint == initialPoint }).first else {
+                return
         }
+        UIView.animate(withDuration: TimeInterval(animDuration), delay: TimeInterval(animDelay), options: [], animations: {
+            self.updateLineView(screenLoc: pointModel.screenLoc)
+        }, completion: nil)
+        
     }
     
     override func updateChartPointsScreenLocations() {
